@@ -2,9 +2,9 @@
 /**
  *  @Copyright
  *
- *  @package	VCNT for Joomla! 2.5
+ *  @package	Visitorcounter - VCNT for Joomla! 2.5
  *  @author     Viktor Vogel {@link http://joomla-extensions.kubik-rubik.de/}
- *  @version	Version: 2.5-2 - 05-Jun-2012
+ *  @version	Version: 2.5-5 - 2013-07-31
  *  @link       Project Site {@link http://joomla-extensions.kubik-rubik.de/vcnt-visitorcounter}
  *
  *  @license GNU/GPL
@@ -35,7 +35,7 @@ $s_yesterday = $params->get('s_yesterday');
 $s_all = $params->get('s_all');
 $s_week = $params->get('s_week');
 $s_month = $params->get('s_month');
-$s_clean = $params->get('s_clean');
+$clean_db = $params->get('clean_db');
 $copy = $params->get('copy', 1);
 $horizontal = $params->get('horizontal');
 $separator = $params->get('separator');
@@ -51,18 +51,30 @@ $cwsession = $params->get('cwsession');
 $whoisonline = $params->get('whoisonline');
 $whoisonline_linknames = $params->get('whoisonline_linknames');
 $whoisonline_session = $params->get('whoisonline_session');
+$sql = $params->get('sql');
 
-$start = new mod_vcntHelper;
+$start = new ModVcntHelper();
+
+if($sql)
+{
+    $start->createSqlTables($clean_db);
+}
+
 $start->count($params);
 
-if($s_clean)
+if($clean_db)
 {
-    $start->clean($params);
+    $start->clean();
 }
 
 if(!empty($whoisonline))
 {
     $users_online = $start->whoIsOnline($whoisonline_session);
+
+    if(!empty($whoisonline_linknames))
+    {
+        $item_id = $start->getItemId($whoisonline_linknames);
+    }
 }
 
 $show_allowed_user = $start->showAllowedUser($params);
@@ -79,7 +91,7 @@ if($show_allowed_user == 1)
         }
         elseif($cwpopup == 2)
         {
-            mod_vcntHelper::popupJSAlert($params, $all_visitors, $counterwinner, $cwnumber, $cwsession);
+            mod_vcntHelper::popupJSAlert($cwsession);
         }
     }
 

@@ -4,7 +4,7 @@
  *
  *  @package	VCNT - Visitorcounter Backend Info for Joomla! 2.5
  *  @author     Viktor Vogel {@link http://joomla-extensions.kubik-rubik.de/}
- *  @version	Version: 2.5-1 - 24-Jun-2012
+ *  @version	Version: 2.5-2 - 22-Aug-2012
  *  @link       Project Site {@link http://joomla-extensions.kubik-rubik.de/vcnt-visitorcounter}
  *
  *  @license GNU/GPL

@@ -2,9 +2,9 @@
 /**
  *  @Copyright
  *
- *  @package	VCNT for Joomla! 2.5
+ *  @package	Visitorcounter - VCNT for Joomla! 2.5
  *  @author     Viktor Vogel {@link http://joomla-extensions.kubik-rubik.de/}
- *  @version	Version: 2.5-2 - 05-Jun-2012
+ *  @version	Version: 2.5-5 - 2013-07-31
  *  @link       Project Site {@link http://joomla-extensions.kubik-rubik.de/vcnt-visitorcounter}
  *
  *  @license GNU/GPL
@@ -23,7 +23,7 @@
  */
 defined('_JEXEC') or die('Restricted access');
 
-class mod_vcntHelper extends JObject
+class ModVcntHelper extends JObject
 {
     protected $_db;
 
@@ -32,16 +32,50 @@ class mod_vcntHelper extends JObject
         $this->set('_db', JFactory::getDbo());
     }
 
+    /**
+     * Checks whether a database entry has to be created
+     *
+     * @param boolean $clean_db
+     */
+    public function createSqlTables($clean_db)
+    {
+        $query = "CREATE TABLE IF NOT EXISTS ".$this->_db->nameQuote('#__vcnt')." (".$this->_db->nameQuote('tm')." INT NOT NULL, ".$this->_db->nameQuote('ip')." VARCHAR(16) NOT NULL DEFAULT '0.0.0.0')";
+        $this->_db->setQuery($query);
+        $this->_db->query();
+
+        if(!empty($clean_db))
+        {
+            $query = "CREATE TABLE IF NOT EXISTS ".$this->_db->nameQuote('#__vcnt_pc')." (".$this->_db->nameQuote('cnt')." INT NOT NULL DEFAULT '0')";
+            $this->_db->setQuery($query);
+            $this->_db->query();
+
+            $query = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt_pc');
+            $this->_db->setQuery($query);
+            $numrows = $this->_db->loadResult();
+
+            if(empty($numrows))
+            {
+                $query = "INSERT INTO ".$this->_db->nameQuote('#__vcnt_pc')." VALUES(0)";
+                $this->_db->setQuery($query);
+                $this->_db->query();
+            }
+        }
+    }
+
+    /**
+     * Counts the call of the page
+     *
+     * @param JRegistry $params
+     */
     function count($params)
     {
-        $locktime = $params->get('locktime', 60);
+        $locktime = $params->get('locktime', 60) * 60;
         $nobots = $params->get('nobots');
         $botslist = $params->get('botslist');
         $noip = $params->get('noip');
         $ipslist = $params->get('ipslist');
-        $sql = $params->get('sql');
+        $anonymize_ip = $params->get('anonymize_ip');
 
-        $locktime = $locktime * 60;
         $now = time();
         $ip = $_SERVER['REMOTE_ADDR'];
 
@@ -49,16 +83,18 @@ class mod_vcntHelper extends JObject
 
         if($nobots)
         {
-            if(isset($_SERVER['HTTP_USER_AGENT']))
-            {
-                $agent = $_SERVER['HTTP_USER_AGENT'];
-                $bots_array = explode(",", $botslist);
+            $agent = $_SERVER['HTTP_USER_AGENT'];
 
-                foreach($bots_array as $e)
+            if(!empty($agent))
+            {
+                $bots_array = array_map('trim', explode(',', $botslist));
+
+                foreach($bots_array as $bot_value)
                 {
-                    if(preg_match('/'.trim($e).'/i', $agent))
+                    if(preg_match('@'.$bot_value.'@i', $agent))
                     {
                         $bot = 1;
+                        break;
                     }
                 }
             }
@@ -72,15 +108,16 @@ class mod_vcntHelper extends JObject
 
         if($noip)
         {
-            if(isset($_SERVER['REMOTE_ADDR']))
+            if(!empty($ip))
             {
-                $agent = $_SERVER['REMOTE_ADDR'];
-                $bots_array = explode(",", $ipslist);
-                foreach($bots_array as $e)
+                $ips_array = array_map('trim', explode(',', $ipslist));
+
+                foreach($ips_array as $ip_value)
                 {
-                    if(preg_match('/'.trim($e).'/i', $agent))
+                    if(preg_match('@'.$ip_value.'@i', $ip))
                     {
                         $iplock = 1;
+                        break;
                     }
                 }
             }
@@ -90,20 +127,19 @@ class mod_vcntHelper extends JObject
             }
         }
 
-        if($sql)
+        // Anonymize IP - set last octet of address to 0
+        if($anonymize_ip)
         {
-            $query = "CREATE TABLE IF NOT EXISTS ".$this->_db->nameQuote('#__vcnt')." (".$this->_db->nameQuote('tm')." INT NOT NULL, ".$this->_db->nameQuote('ip')." VARCHAR(16) NOT NULL DEFAULT '0.0.0.0')";
-            $this->_db->setQuery($query);
-            $this->_db->query();
+            $ip = substr($ip, 0, strrpos($ip, '.')).'.0';
         }
 
-        // Prüfen, ob IP bereits vorhanden und Reloadsperre abgelaufen
+        // Check whether the same IP is not already counted or the reload time has expired
         $query = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt')." WHERE ".$this->_db->nameQuote('ip')." = ".$this->_db->quote($ip)." AND (".$this->_db->nameQuote('tm')." + ".$this->_db->quote($locktime).") > ".$this->_db->quote($now);
         $this->_db->setQuery($query);
-        $result = $this->_db->query();
         $items = $this->_db->loadResult();
 
-        if(empty($items) AND ($bot == 0) AND ($iplock == 0))
+        // All conditions are fulfilled, store the hit to the database
+        if(empty($items) AND $bot == 0 AND $iplock == 0)
         {
             $query = "INSERT INTO ".$this->_db->nameQuote('#__vcnt')." (".$this->_db->nameQuote('tm').", ".$this->_db->nameQuote('ip').") VALUES (".$this->_db->quote($now).", ".$this->_db->quote($ip).")";
             $this->_db->setQuery($query);
@@ -111,109 +147,109 @@ class mod_vcntHelper extends JObject
         }
     }
 
+    /**
+     * Gets the counter data
+     *
+     * @param JRegistry $params
+     * @return array
+     */
     function read($params)
     {
-        $siteOffset = JFactory::getApplication()->getCfg('offset');
-        date_default_timezone_set($siteOffset);
+        // Set the correct timezone offset
+        $site_offset = JFactory::getApplication()->getCfg('offset');
+        date_default_timezone_set($site_offset);
 
+        // Calculate the needed time intervalls
         $day = date('d');
         $month = date('m');
         $year = date('Y');
         $daystart = mktime(0, 0, 0, $month, $day, $year);
         $monthstart = mktime(0, 0, 0, $month, 1, $year);
-        $weekday = date('N');
-        $weekday--;
+        $weekstart = $daystart - ((date('N') - 1) * 24 * 60 * 60);
+        $yesterdaystart = $daystart - (24 * 60 * 60);
 
-        if($weekday < 0)
+        // Create queries for the database call
+        $queries = array();
+
+        $queries['query_all'] = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt');
+        $queries['query_today'] = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt')." WHERE ".$this->_db->nameQuote('tm')." > ".$this->_db->quote($daystart);
+        $queries['query_yesterday'] = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt')." WHERE ".$this->_db->nameQuote('tm')." > ".$this->_db->quote($yesterdaystart)." AND ".$this->_db->nameQuote('tm')." < ".$this->_db->quote($daystart);
+        $queries['query_week'] = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt')." WHERE ".$this->_db->nameQuote('tm')." >= ".$this->_db->quote($weekstart);
+        $queries['query_month'] = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt')." WHERE ".$this->_db->nameQuote('tm')." >= ".$this->_db->quote($monthstart);
+
+        // Add the number from the cleaned database table
+        $clean_db = $params->get('clean_db');
+
+        if(!empty($clean_db))
         {
-            $weekday = 7;
+            $queries['query_clean_db'] = "SELECT ".$this->_db->nameQuote('cnt')." FROM ".$this->_db->nameQuote('#__vcnt_pc');
         }
 
-        $weekday = $weekday * 24 * 60 * 60;
-        $weekstart = $daystart - $weekday;
-        $yesterdaystart = $daystart - (24 * 60 * 60);
+        $queries_string = implode(' UNION ALL ', $queries);
+        $this->_db->setQuery($queries_string);
+        $result = $this->_db->loadResultArray();
+
+        $all_visitors = $result[0];
+
+        // Add the preset number
         $preset = $params->get('preset');
 
-        $query = "SELECT CNT FROM ".$this->_db->nameQuote('#__vcnt_pc');
-        $this->_db->setQuery($query);
-        $pre2 = $this->_db->loadResult();
+        if(!empty($preset))
+        {
+            $all_visitors += $preset;
+        }
 
-        $query = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt');
-        $this->_db->setQuery($query);
-        $all_visitors = $this->_db->loadResult();
-        $all_visitors += $preset;
-        $all_visitors += $pre2;
+        if(!empty($clean_db))
+        {
+            $all_visitors += $result[5];
+        }
 
-        $query = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt')." WHERE ".$this->_db->nameQuote('tm').">".$this->_db->quote($daystart);
-        $this->_db->setQuery($query);
-        $today_visitors = $this->_db->loadResult();
-
-        $query = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt')." WHERE ".$this->_db->nameQuote('tm').">".$this->_db->quote($yesterdaystart)." AND ".$this->_db->nameQuote('tm')."<".$this->_db->quote($daystart);
-        $this->_db->setQuery($query);
-        $yesterday_visitors = $this->_db->loadResult();
-
-        $query = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt')." WHERE ".$this->_db->nameQuote('tm').">=".$this->_db->quote($weekstart);
-        $this->_db->setQuery($query);
-        $week_visitors = $this->_db->loadResult();
-
-        $query = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt')." WHERE ".$this->_db->nameQuote('tm').">=".$this->_db->quote($monthstart);
-        $this->_db->setQuery($query);
-        $month_visitors = $this->_db->loadResult();
+        $today_visitors = $result[1];
+        $yesterday_visitors = $result[2];
+        $week_visitors = $result[3];
+        $month_visitors = $result[4];
 
         $ret = array($all_visitors, $today_visitors, $yesterday_visitors, $week_visitors, $month_visitors);
 
-        return ($ret);
+        return $ret;
     }
 
-    function clean($params)
+    /**
+     * Cleans the database table from unneeded entries
+     */
+    function clean()
     {
-        $sql = $params->get('sql');
-
-        $siteOffset = JFactory::getApplication()->getCfg('offset');
-        date_default_timezone_set($siteOffset);
+        $site_offset = JFactory::getApplication()->getCfg('offset');
+        date_default_timezone_set($site_offset);
 
         $month = date('m');
         $year = date('Y');
         $monthstart = mktime(0, 0, 0, $month, 1, $year);
 
-        // Prüfen, ob MOD_VCNT_SQL Tabelle bereits erstellt wurde
-        if($sql)
-        {
-            $query = "CREATE TABLE IF NOT EXISTS ".$this->_db->nameQuote('#__vcnt_pc')." (".$this->_db->nameQuote('cnt')." INT NOT NULL NOT NULL DEFAULT '0')";
-            $this->_db->setQuery($query);
-            $this->_db->query();
-        }
-
-        $query = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt_pc');
-        $this->_db->setQuery($query);
-        $numrows = $this->_db->loadResult();
-
-        if(!$numrows)
-        {
-            $query = "INSERT INTO ".$this->_db->nameQuote('#__vcnt_pc')." VALUES(0)";
-            $this->_db->setQuery($query);
-            $this->_db->query();
-        }
-
         $cleanstart = $monthstart - (8 * 24 * 60 * 60);
-        $query = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt')." WHERE ".$this->_db->nameQuote('tm')."<".$this->_db->quote($cleanstart);
+
+        $query = "SELECT count(*) FROM ".$this->_db->nameQuote('#__vcnt')." WHERE ".$this->_db->nameQuote('tm')." < ".$this->_db->quote($cleanstart);
         $this->_db->setQuery($query);
         $oldrows = $this->_db->loadResult();
 
-        if($oldrows)
+        if(!empty($oldrows))
         {
-            $query = "UPDATE ".$this->_db->nameQuote('#__vcnt_pc')." SET ".$this->_db->nameQuote('cnt')."=".$this->_db->nameQuote('cnt')."+".$this->_db->quote($oldrows);
+            $query = "UPDATE ".$this->_db->nameQuote('#__vcnt_pc')." SET ".$this->_db->nameQuote('cnt')." = ".$this->_db->nameQuote('cnt')." + ".$this->_db->quote($oldrows);
             $this->_db->setQuery($query);
             $this->_db->query();
 
-            $query = "DELETE FROM ".$this->_db->nameQuote('#__vcnt')." WHERE ".$this->_db->nameQuote('tm')."<".$this->_db->quote($cleanstart);
+            $query = "DELETE FROM ".$this->_db->nameQuote('#__vcnt')." WHERE ".$this->_db->nameQuote('tm')." < ".$this->_db->quote($cleanstart);
             $this->_db->setQuery($query);
             $this->_db->query();
         }
-
-        return;
     }
 
+    /**
+     * Gets all online users and visitors
+     *
+     * @param int $whoisonline_session
+     * @return int
+     */
     function whoIsOnline($whoisonline_session)
     {
         $users_online = array();
@@ -223,10 +259,12 @@ class mod_vcntHelper extends JObject
 
         $query = "SELECT ".$this->_db->nameQuote('guest').", ".$this->_db->nameQuote('usertype').", ".$this->_db->nameQuote('client_id')." , ".$this->_db->nameQuote('username').", ".$this->_db->nameQuote('userid')." FROM ".$this->_db->nameQuote('#__session')." WHERE ".$this->_db->nameQuote('client_id')." = 0 AND ".$this->_db->nameQuote('time')." > ".$this->_db->quote($whoisonline_session);
         $this->_db->setQuery($query);
-        $sessions = (array) $this->_db->loadObjectList();
+        $sessions = (array)$this->_db->loadObjectList();
 
         if(!empty($sessions))
         {
+            $counted_session = array();
+
             foreach($sessions as $session)
             {
                 if($session->guest == 1 AND empty($session->usertype))
@@ -236,9 +274,14 @@ class mod_vcntHelper extends JObject
                 }
                 elseif($session->guest == 0)
                 {
-                    $user++;
-                    $username = array('username' => $session->username, 'userid' => $session->userid);
-                    $users_online['usernames'][] = $username;
+                    if(!in_array($session->username, $counted_session))
+                    {
+                        $user++;
+                        $username = array('username' => $session->username, 'userid' => $session->userid);
+                        $users_online['usernames'][] = $username;
+
+                        $counted_session[] = $session->username;
+                    }
                 }
             }
         }
@@ -249,6 +292,12 @@ class mod_vcntHelper extends JObject
         return $users_online;
     }
 
+    /**
+     * Creates the squeeze box for the contest popup
+     *
+     * @param JRegistry $params
+     * @param int $cwsession
+     */
     function popupSqueeze(&$params, $cwsession)
     {
         $document = JFactory::getDocument();
@@ -328,7 +377,7 @@ class mod_vcntHelper extends JObject
                 ).'
                         SqueezeBox.fromElement(myel,{
                                 size: {x: '.$width.', y: '.$height.'},
-                                overlayOpacity: '.((double) $cOverlayOpacity) / 100.0.',
+                                overlayOpacity: '.((double)$cOverlayOpacity) / 100.0.',
                                 handler: \''.($cswf ? 'adopt' : 'iframe').'\',
                                 iframePreload:true,
                                 onOpen: function() {
@@ -369,10 +418,16 @@ class mod_vcntHelper extends JObject
                  });
                  //-->
                  </script>';
+
         $document->addCustomTag($html);
     }
 
-    function popupJSAlert($params, $all_visitors, $counterwinner, $cwnumber, $cwsession)
+    /**
+     * Creates a JavaScript alert popup for the contest
+     *
+     * @param int $cwsession
+     */
+    function popupJSAlert($cwsession)
     {
         if(!isset($_SESSION['cwsessioncookie']))
         {
@@ -397,12 +452,18 @@ class mod_vcntHelper extends JObject
         }
     }
 
+    /**
+     * Checks the group level of the user
+     *
+     * @param JRegistry $params
+     * @return boolean
+     */
     function showAllowedUser($params)
     {
         $user = JFactory::getUser();
         $allowedusergroup = false;
 
-        $filtergroups = (array) $params->get('filter_groups', 1);
+        $filtergroups = (array)$params->get('filter_groups', 1);
         $usergroup = JAccess::getGroupsByUser($user->id);
 
         foreach($usergroup as $value)
@@ -424,4 +485,38 @@ class mod_vcntHelper extends JObject
 
         return $allowedusergroup;
     }
+
+    /**
+     * Gets the Item ID of the component - the Item ID is the ID from the menu entry
+     *
+     * @return int The Item ID of the menu entry of the component
+     */
+    function getItemId($whoisonline_linknames)
+    {
+        if($whoisonline_linknames == 1)
+        {
+            $link = 'index.php?option=com_users&view=profile';
+        }
+        elseif($whoisonline_linknames == 2)
+        {
+            $link = 'index.php?option=com_comprofiler';
+        }
+
+        $db = JFactory::getDBO();
+        $query = 'SELECT '.$db->quoteName("id").' FROM '.$db->quoteName("#__menu").' WHERE '.$db->quoteName("link").' = "'.$link.'" AND '.$db->quoteName("published").' = 1';
+        $db->setQuery($query);
+        $item_id = $db->loadResult();
+
+        if(empty($item_id))
+        {
+            $item_id = '';
+        }
+        else
+        {
+            $item_id = '&Itemid='.$item_id;
+        }
+
+        return $item_id;
+    }
+
 }

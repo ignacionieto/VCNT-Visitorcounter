@@ -4,7 +4,7 @@
  *
  *  @package	VCNT - Visitorcounter Backend Info for Joomla! 2.5
  *  @author     Viktor Vogel {@link http://joomla-extensions.kubik-rubik.de/}
- *  @version	Version: 2.5-1 - 24-Jun-2012
+ *  @version	Version: 2.5-2 - 22-Aug-2012
  *  @link       Project Site {@link http://joomla-extensions.kubik-rubik.de/vcnt-visitorcounter}
  *
  *  @license GNU/GPL
@@ -104,7 +104,7 @@ echo '<!-- VCNT - Visitorcounter Backend Info - Kubik-Rubik Joomla! Extensions -
             <div><?php echo JText::sprintf('MOD_VCNT_BACKEND_INFO_USERONLINE', $guest, $member); ?></div>
                 <?php if($whoisonline == 2 AND !empty($users_online['usernames'])) : ?>
                 <ul>
-                        <?php foreach($users_online['usernames'] as $user_online) : ?>
+                    <?php foreach($users_online['usernames'] as $user_online) : ?>
                         <li class="members">
                                 <?php if(!empty($whoisonline_linknames)) : ?>
                                 <a href="index.php?option=com_users&task=user.edit&id=<?php echo (int) $user_online['userid']; ?>">
@@ -114,7 +114,7 @@ echo '<!-- VCNT - Visitorcounter Backend Info - Kubik-Rubik Joomla! Extensions -
                                 <?php echo $user_online['username']; ?>
                         <?php endif; ?>
                         </li>
-                <?php endforeach; ?>
+                    <?php endforeach; ?>
                 </ul>
             <?php endif; ?>
         <?php endif; ?>
